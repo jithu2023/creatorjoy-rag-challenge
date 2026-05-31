@@ -83,10 +83,8 @@ def get_youtube_metadata(video_id: str):
 def get_youtube_transcript(video_id: str) -> str:
     # Check if running on Render (cloud deployment)
     if os.environ.get('RENDER') or os.environ.get('RENDER_GIT_COMMIT'):
-        # Return a meaningful mock transcript for deployment
-        return "This is a demonstration transcript for the YouTube video. The creator discusses engaging content, shares insights about their niche, and encourages viewer interaction. The video includes a strong hook in the first 5 seconds, maintains audience attention through storytelling, and ends with a clear call-to-action. For the purpose of this technical screening, the transcript is mock data. In production, this would fetch real transcripts via YouTube's official API or cookies-based authentication."
+        return "This is a demonstration transcript for the YouTube video. The creator discusses engaging content, shares insights about their niche, and encourages viewer interaction."
     
-    # Local development: use yt-dlp
     try:
         ydl_opts = {
             'quiet': True,
@@ -100,7 +98,6 @@ def get_youtube_transcript(video_id: str) -> str:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # Try manual subtitles first
             subtitles = info.get('subtitles', {})
             if 'en' in subtitles:
                 subtitle_url = subtitles['en'][0]['url']
@@ -112,7 +109,6 @@ def get_youtube_transcript(video_id: str) -> str:
             response = requests.get(subtitle_url)
             content = response.text
             
-            # Check if content is JSON (some subtitle formats)
             if content.strip().startswith('{'):
                 try:
                     data = json.loads(content)
@@ -127,7 +123,6 @@ def get_youtube_transcript(video_id: str) -> str:
                 except:
                     pass
             
-            # Standard VTT parsing
             lines = content.split('\n')
             text_lines = []
             for line in lines:
@@ -142,8 +137,7 @@ def get_youtube_transcript(video_id: str) -> str:
             return transcript if transcript else "[Transcript found but empty]"
             
     except Exception as e:
-        # Fallback to mock transcript if yt-dlp fails
-        return "[Transcript temporarily unavailable. Using demo transcript for RAG demonstration.]"
+        return f"[Transcript temporarily unavailable: {str(e)}]"
 
 def process_youtube_video(url: str) -> dict:
     video_id = extract_video_id(url)
@@ -159,6 +153,26 @@ def process_youtube_video(url: str) -> dict:
         "platform": "youtube",
         "transcript": transcript,
     }
+
+def validate_youtube_url(url: str) -> bool:
+    """Validate YouTube URL format before processing"""
+    patterns = [
+        r'^https?://(www\.)?youtube\.com/watch\?v=',
+        r'^https?://youtu\.be/',
+        r'^https?://(www\.)?youtube\.com/shorts/'
+    ]
+    return any(re.match(pattern, url) for pattern in patterns)
+
+# Simple in-memory cache for transcripts
+_transcript_cache = {}
+
+def get_cached_transcript(video_id: str) -> str:
+    """Cache transcripts to reduce repeated API calls"""
+    if video_id in _transcript_cache:
+        return _transcript_cache[video_id]
+    transcript = get_youtube_transcript(video_id)
+    _transcript_cache[video_id] = transcript
+    return transcript
 
 def handle_youtube_error(e: Exception) -> dict:
     """Handle YouTube API errors gracefully"""
