@@ -8,6 +8,7 @@ from app.rag.vector_store import store_video, search_similar
 from app.rag.chain import ask_question
 import os
 import traceback
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -43,6 +44,15 @@ class AskRequest(BaseModel):
 @app.get("/")
 def root():
     return {"message": "Creatorjoy RAG API is running - Day 3: RAG Ready"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Render deployment monitoring"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0"
+    }
 
 @app.post("/process-youtube")
 async def process_youtube(request: VideoRequest):
