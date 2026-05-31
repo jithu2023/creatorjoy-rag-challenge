@@ -1,13 +1,14 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, Dict
 from app.ingestion.youtube import process_youtube_video
 from app.ingestion.instagram import process_instagram_reel
-from app.rag.vector_store import store_video, search_similar
+from app.rag.vector_store import store_video
 from app.rag.chain import ask_question
 import os
 import traceback
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -22,6 +23,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    print(f"{request.method} {request.url.path} - {duration:.3f}s")
+    return response
 
 # Request/Response Models
 class VideoRequest(BaseModel):
@@ -43,7 +53,7 @@ class AskRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "Creatorjoy RAG API is running - Day 3: RAG Ready"}
+    return {"message": "Creatorjoy RAG API is running - RAG Ready"}
 
 @app.get("/health")
 async def health_check():
