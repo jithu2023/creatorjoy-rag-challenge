@@ -105,8 +105,16 @@ export default function Home() {
           if (done) break;
           
           const chunk = decoder.decode(value);
-          accumulatedAnswer += chunk;
-          setAnswer(accumulatedAnswer);
+          // Parse SSE format: data: text\n\n
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const content = line.slice(6);
+              if (content === '[DONE]') continue;
+              accumulatedAnswer += content;
+              setAnswer(accumulatedAnswer);
+            }
+          }
         }
       }
       

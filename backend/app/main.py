@@ -158,7 +158,7 @@ async def ask(request: AskRequest):
 
 @app.post("/ask-stream")
 async def ask_stream(request: AskRequest):
-    """Ask a question using RAG with streaming response"""
+    """Ask a question using RAG with streaming response (SSE format)"""
     try:
         async def generate():
             async for chunk in ask_question_streaming(
@@ -166,16 +166,18 @@ async def ask_stream(request: AskRequest):
                 request.video_a_id, 
                 request.video_b_id
             ):
-                yield chunk
+                # Send each chunk as a Server-Sent Event
+                yield f"data: {chunk}\n\n"
                 await asyncio.sleep(0.01)
+            yield "data: [DONE]\n\n"
         
         return StreamingResponse(
             generate(),
-            media_type="text/plain",
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
-                "Content-Type": "text/plain; charset=utf-8",
             }
         )
     except Exception as e:
