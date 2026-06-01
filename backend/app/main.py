@@ -10,6 +10,7 @@ from app.rag.chain import ask_question, ask_question_streaming
 import os
 import traceback
 import time
+import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -58,7 +59,6 @@ def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Render deployment monitoring"""
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -128,7 +128,6 @@ async def process_instagram(request: VideoRequest):
 
 @app.post("/store")
 async def store(request: StoreRequest):
-    """Store video transcript in vector database"""
     try:
         chunks = store_video(
             request.video_id, 
@@ -146,7 +145,6 @@ async def store(request: StoreRequest):
 
 @app.post("/ask")
 async def ask(request: AskRequest):
-    """Ask a question using RAG"""
     try:
         result = ask_question(
             request.query, 
@@ -162,13 +160,23 @@ async def ask(request: AskRequest):
 async def ask_stream(request: AskRequest):
     """Ask a question using RAG with streaming response"""
     try:
-        return StreamingResponse(
-            ask_question_streaming(
+        async def generate():
+            async for chunk in ask_question_streaming(
                 request.query, 
                 request.video_a_id, 
                 request.video_b_id
-            ),
-            media_type="text/plain"
+            ):
+                yield chunk
+                await asyncio.sleep(0.01)
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Content-Type": "text/plain; charset=utf-8",
+            }
         )
     except Exception as e:
         print(f"ERROR: {str(e)}")
