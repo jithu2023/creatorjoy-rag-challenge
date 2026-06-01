@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
 from app.ingestion.youtube import process_youtube_video
 from app.ingestion.instagram import process_instagram_reel
 from app.rag.vector_store import store_video
-from app.rag.chain import ask_question
+from app.rag.chain import ask_question, ask_question_streaming
 import os
 import traceback
 import time
@@ -153,6 +154,22 @@ async def ask(request: AskRequest):
             request.video_b_id
         )
         return result
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ask-stream")
+async def ask_stream(request: AskRequest):
+    """Ask a question using RAG with streaming response"""
+    try:
+        return StreamingResponse(
+            ask_question_streaming(
+                request.query, 
+                request.video_a_id, 
+                request.video_b_id
+            ),
+            media_type="text/plain"
+        )
     except Exception as e:
         print(f"ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

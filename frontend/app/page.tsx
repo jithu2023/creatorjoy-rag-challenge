@@ -15,7 +15,8 @@ export default function Home() {
   const [answer, setAnswer] = useState('');
   const [sources, setSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [chatHistory, setChatHistory] = useState<{question: string, answer: string}[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [chatHistory, setChatHistory] = useState<{question: string, answer: string, sources: any[]}[]>([]);
 
   const processVideo = async (url: string, platform: 'youtube' | 'instagram') => {
     const endpoint = platform === 'youtube' ? '/process-youtube' : '/process-instagram';
@@ -79,21 +80,49 @@ export default function Home() {
     if (!query) return;
     
     setLoading(true);
+    setIsStreaming(true);
+    setAnswer('');
+    setSources([]);
+    
     try {
-      const res = await axios.post(`${BACKEND_URL}/ask`, {
-        query,
-        video_a_id: videoAData?.video_id,
-        video_b_id: videoBData?.video_id
+      const response = await fetch(`${BACKEND_URL}/ask-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          video_a_id: videoAData?.video_id,
+          video_b_id: videoBData?.video_id
+        })
       });
       
-      setAnswer(res.data.answer);
-      setSources(res.data.sources);
-      setChatHistory(prev => [...prev, { question: query, answer: res.data.answer }]);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedAnswer = '';
+      
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          accumulatedAnswer += chunk;
+          setAnswer(accumulatedAnswer);
+        }
+      }
+      
+      // After streaming completes, add to chat history
+      setChatHistory(prev => [...prev, { 
+        question: query, 
+        answer: accumulatedAnswer,
+        sources: sources 
+      }]);
       setQuery('');
+      
     } catch (err) {
       console.error(err);
       setAnswer('Error: Could not get response from server');
     }
+    setIsStreaming(false);
     setLoading(false);
   };
 
@@ -105,7 +134,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Animated background decoration */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse delay-1000"></div>
@@ -308,31 +336,34 @@ export default function Home() {
                         <div className="text-sm text-gray-300 prose prose-invert max-w-none">
                           <ReactMarkdown>{chat.answer}</ReactMarkdown>
                         </div>
+                        {chat.sources && chat.sources.length > 0 && (
+                          <div className="mt-3 pt-2 border-t border-white/10">
+                            <p className="text-xs text-gray-500 mb-1">📎 Sources:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {chat.sources.map((s, i) => (
+                                <span key={i} className="text-xs bg-white/5 px-2 py-1 rounded-md text-gray-400">
+                                  Video {s.video_id?.slice(0, 8)} (Chunk {s.chunk_index})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))
               )}
               
-              {/* Current Answer */}
-              {answer && !chatHistory.some(c => c.answer === answer) && (
+              {/* Streaming Answer (shows while typing) */}
+              {isStreaming && answer && (
                 <div className="flex justify-start">
                   <div className="max-w-[80%] bg-white/10 rounded-2xl rounded-tl-sm px-4 py-3">
                     <div className="text-sm text-gray-300 prose prose-invert max-w-none">
                       <ReactMarkdown>{answer}</ReactMarkdown>
                     </div>
-                    {sources.length > 0 && (
-                      <div className="mt-3 pt-2 border-t border-white/10">
-                        <p className="text-xs text-gray-500 mb-1">📎 Sources:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {sources.map((s, i) => (
-                            <span key={i} className="text-xs bg-white/5 px-2 py-1 rounded-md text-gray-400">
-                              Video {s.video_id.slice(0, 8)} (Chunk {s.chunk_index})
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <div className="mt-2">
+                      <span className="inline-block w-2 h-4 bg-purple-400 animate-pulse"></span>
+                    </div>
                   </div>
                 </div>
               )}

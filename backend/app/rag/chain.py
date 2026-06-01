@@ -1,9 +1,10 @@
 from groq import Groq
 import os
-from typing import List, Dict
+from typing import List, Dict, AsyncGenerator
 from .vector_store import search_similar
 from dotenv import load_dotenv
 import time
+import asyncio
 
 load_dotenv()
 
@@ -21,7 +22,7 @@ def call_groq_with_retry(messages, max_retries=3):
             )
         except Exception as e:
             if "rate_limit" in str(e) and attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                wait_time = 2 ** attempt
                 time.sleep(wait_time)
             else:
                 raise
@@ -57,17 +58,14 @@ ANSWER:"""
 def ask_question(query: str, video_a_id: str = None, video_b_id: str = None):
     """Ask a question with RAG retrieval"""
     
-    # Determine which videos to search
     video_ids = []
     if video_a_id:
         video_ids.append(video_a_id)
     if video_b_id:
         video_ids.append(video_b_id)
     
-    # Search for relevant chunks
     results = search_similar(query, video_ids if video_ids else None, limit=8)
     
-    # Format context
     context = []
     if results and results.get('documents') and results['documents'][0]:
         for i, doc in enumerate(results['documents'][0]):
@@ -77,10 +75,8 @@ def ask_question(query: str, video_a_id: str = None, video_b_id: str = None):
                 "chunk_index": results['metadatas'][0][i].get('chunk_index', i)
             })
     
-    # Build prompt
     prompt, sources = build_prompt(query, context)
     
-    # Get LLM response from Groq with retry logic
     messages = [
         {"role": "system", "content": "You are a helpful video performance analyst. Answer questions about video transcripts with citations."},
         {"role": "user", "content": prompt}
@@ -96,3 +92,45 @@ def ask_question(query: str, video_a_id: str = None, video_b_id: str = None):
         "context_used": len(context),
         "model": "llama-3.3-70b-versatile"
     }
+
+
+async def ask_question_streaming(query: str, video_a_id: str = None, video_b_id: str = None) -> AsyncGenerator[str, None]:
+    """Ask a question with RAG retrieval and streaming response"""
+    
+    video_ids = []
+    if video_a_id:
+        video_ids.append(video_a_id)
+    if video_b_id:
+        video_ids.append(video_b_id)
+    
+    results = search_similar(query, video_ids if video_ids else None, limit=8)
+    
+    context = []
+    if results and results.get('documents') and results['documents'][0]:
+        for i, doc in enumerate(results['documents'][0]):
+            context.append({
+                "text": doc,
+                "video_id": results['metadatas'][0][i]['video_id'],
+                "chunk_index": results['metadatas'][0][i].get('chunk_index', i)
+            })
+    
+    prompt, sources = build_prompt(query, context)
+    
+    messages = [
+        {"role": "system", "content": "You are a helpful video performance analyst. Answer questions about video transcripts with citations."},
+        {"role": "user", "content": prompt}
+    ]
+    
+    # Stream from Groq
+    stream = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=messages,
+        temperature=0.3,
+        max_tokens=600,
+        stream=True
+    )
+    
+    for chunk in stream:
+        if chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+            await asyncio.sleep(0.01)  # Small delay for smoother streaming
